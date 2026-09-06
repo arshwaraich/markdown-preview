@@ -19,7 +19,7 @@ fi
     --errors --warnings > /dev/null
 
 swiftc -O \
-    Sources/Markdown.swift Sources/Style.swift Sources/main.swift \
+    Sources/Markdown.swift Sources/Style.swift Sources/Render.swift Sources/main.swift \
     -o "$APP/Contents/MacOS/Markdown"
 codesign --force --deep --sign - "$APP"
 echo "Built $(pwd)/$APP"

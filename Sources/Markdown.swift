@@ -106,6 +106,19 @@ enum Markdown {
                 continue
             }
 
+            // A block of raw HTML runs until a blank line, passed through as-is.
+            if trimmed.hasPrefix("<"), trimmed.range(of: #"^</?[A-Za-z]"#, options: .regularExpression) != nil {
+                var block: [String] = []
+                while i < lines.count, !lines[i].trimmingCharacters(in: .whitespaces).isEmpty {
+                    block.append(lines[i])
+                    i += 1
+                }
+                if !isExecutable(trimmed) {
+                    out += sanitize(block.joined(separator: "\n")) + "\n"
+                }
+                continue
+            }
+
             // Paragraph
             var para: [String] = []
             while i < lines.count {
@@ -292,14 +305,18 @@ enum Markdown {
     }
 
     private static func inline(_ text: String) -> String {
-        var s = escape(text)
-
-        // Code spans get stashed so nothing else rewrites their contents.
+        // Code spans and raw HTML are stashed before escaping so neither one
+        // rewrites the other: a tag inside backticks stays literal text, and a
+        // tag outside them is passed through to the browser.
         var stash: [String] = []
-        s = replace(s, #"(`+)(.+?)\1"#) { m in
-            stash.append("<code>\(m[2])</code>")
+        func keep(_ html: String) -> String {
+            stash.append(html)
             return "\u{0}\(stash.count - 1)\u{0}"
         }
+
+        var s = replace(text, #"(`+)(.+?)\1"#) { m in keep("<code>\(escape(m[2]))</code>") }
+        s = replace(s, tagPattern) { m in isExecutable(m[0]) ? "" : keep(sanitize(m[0])) }
+        s = escape(s)
 
         s = replace(s, #"!\[([^\]]*)\]\(([^)\s]+)(?:\s+&quot;[^&]*&quot;)?\)"#) { m in
             "<img src=\"\(m[2])\" alt=\"\(m[1])\">"
@@ -318,10 +335,28 @@ enum Markdown {
 
         s = s.replacingOccurrences(of: "  \n", with: "<br>\n")
 
-        for (n, code) in stash.enumerated() {
-            s = s.replacingOccurrences(of: "\u{0}\(n)\u{0}", with: code)
+        for (n, raw) in stash.enumerated() {
+            s = s.replacingOccurrences(of: "\u{0}\(n)\u{0}", with: raw)
         }
         return s
+    }
+
+    /// A single HTML tag, e.g. `<img src="x">`, `</p>` or `<br/>`.
+    private static let tagPattern = #"</?[A-Za-z][A-Za-z0-9-]*(?:\s[^<>]*)?/?>"#
+
+    /// Tags whose contents run as code. Dropped wherever raw HTML is passed
+    /// through — but only there, so they stay literal inside code spans.
+    private static func isExecutable(_ tag: String) -> Bool {
+        tag.range(of: #"(?i)^</?(script|style|iframe|object|embed)\b"#,
+                  options: .regularExpression) != nil
+    }
+
+    /// Strip the parts of a tag that could run code, since a previewed file is
+    /// not necessarily one the reader wrote.
+    private static func sanitize(_ tag: String) -> String {
+        var t = replace(tag, #"\son[a-zA-Z]+\s*=\s*(\"[^\"]*\"|'[^']*'|[^\s>]+)"#) { _ in "" }
+        t = replace(t, #"(?i)(href|src)\s*=\s*(\"|')?\s*javascript:[^\"'>]*(\"|')?"#) { _ in "" }
+        return t
     }
 
     private static func replace(_ s: String, _ pattern: String,

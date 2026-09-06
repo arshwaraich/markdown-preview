@@ -16,7 +16,9 @@ A minimal macOS Markdown previewer. Open a `.md` file, read it. No options.
 No dependencies: the Markdown parser is ~350 lines of Swift, and rendering is a
 `WKWebView`. Supports headings, nested and ordered lists, task lists, tables with
 alignment, fenced code blocks, blockquotes, rules, images, links, and the usual
-inline emphasis.
+inline emphasis. Raw HTML passes through, minus anything that would run code.
+Local images are embedded as data URIs, since `WKWebView` will not load local
+files for a page handed to it as a string.
 
 ## Build
 
@@ -43,6 +45,7 @@ The screenshots are generated from `docs/sample.md` through the app's own
 converter and stylesheet, so they stay honest as the renderer changes:
 
 ```
-swiftc -O Sources/Markdown.swift Sources/Style.swift tools/snapshot/main.swift -o /tmp/snapshot
+swiftc -O Sources/Markdown.swift Sources/Style.swift Sources/Render.swift \
+    tools/snapshot/main.swift -o /tmp/snapshot
 /tmp/snapshot docs/sample.md out.png [dark] [width] [height]
 ```

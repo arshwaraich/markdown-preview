@@ -47,7 +47,9 @@ final class PreviewView: WKWebView, WKNavigationDelegate {
         <script>window.scrollTo(0, \(scrollTo));</script>
         </body></html>
         """
-        loadHTMLString(page, baseURL: base?.deletingLastPathComponent())
+        let dir = base?.deletingLastPathComponent()
+        loadHTMLString(dir.map { PreviewRender.inlineImages(in: page, relativeTo: $0) } ?? page,
+                       baseURL: dir)
     }
 
     // Re-render when the file changes on disk.
