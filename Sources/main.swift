@@ -8,6 +8,8 @@ final class PreviewView: WKWebView, WKNavigationDelegate {
     private var current: URL?
     private var watcher: DispatchSourceFileSystemObject?
 
+    var hasDocument: Bool { current != nil }
+
     init() {
         let config = WKWebViewConfiguration()
         super.init(frame: .zero, configuration: config)
@@ -18,6 +20,8 @@ final class PreviewView: WKWebView, WKNavigationDelegate {
     }
 
     required init?(coder: NSCoder) { fatalError() }
+
+    deinit { watcher?.cancel() }
 
     func load(_ fileURL: URL) {
         current = fileURL
@@ -134,37 +138,77 @@ final class PreviewView: WKWebView, WKNavigationDelegate {
 
 // MARK: - App
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
-    private var window: NSWindow!
-    private let preview = PreviewView()
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
+    private var windows: [NSWindow] = []
+    private var cascadePoint = NSPoint.zero
 
     func applicationDidFinishLaunching(_ note: Notification) {
-        window = NSWindow(
+        buildMenu()
+        if windows.isEmpty { makeWindow() }
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func application(_ sender: NSApplication, openFile path: String) -> Bool {
+        open(URL(fileURLWithPath: path))
+        return true
+    }
+
+    func application(_ app: NSApplication, open urls: [URL]) {
+        for url in urls { open(url) }
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ s: NSApplication) -> Bool { true }
+
+    func windowWillClose(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow else { return }
+        windows.removeAll { $0 === window }
+    }
+
+    // Creates a new, empty window. The first window uses the saved frame
+    // from last launch; later ones cascade so they don't stack exactly.
+    @discardableResult
+    private func makeWindow() -> NSWindow {
+        let preview = PreviewView()
+        let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 820, height: 900),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered, defer: false)
         window.title = "Markdown"
         window.contentView = preview
-        window.center()
-        window.setFrameAutosaveName("MarkdownPreviewWindow")
+        window.delegate = self
+        if windows.isEmpty {
+            window.center()
+            window.setFrameAutosaveName("MarkdownPreviewWindow")
+        } else {
+            cascadePoint = window.cascadeTopLeft(from: cascadePoint)
+        }
+        windows.append(window)
         window.makeKeyAndOrderFront(nil)
-        buildMenu()
-        NSApp.activate(ignoringOtherApps: true)
+        return window
     }
 
-    func application(_ sender: NSApplication, openFile path: String) -> Bool {
-        preview.load(URL(fileURLWithPath: path))
-        return true
+    // Loads a file into the key window if it's still empty, into any other
+    // empty window if not, or opens a fresh window otherwise. This is what
+    // lets ⌘O build up multiple windows without leaving blank ones behind.
+    private func open(_ url: URL) {
+        let target: NSWindow
+        if let key = NSApp.keyWindow, (key.contentView as? PreviewView)?.hasDocument == false {
+            target = key
+        } else if let empty = windows.first(where: { ($0.contentView as? PreviewView)?.hasDocument == false }) {
+            target = empty
+        } else {
+            target = makeWindow()
+        }
+        (target.contentView as? PreviewView)?.load(url)
+        target.makeKeyAndOrderFront(nil)
     }
 
-    func application(_ app: NSApplication, open urls: [URL]) {
-        if let url = urls.first { preview.load(url) }
+    @objc func newWindow(_ sender: Any?) {
+        makeWindow()
     }
-
-    func applicationShouldTerminateAfterLastWindowClosed(_ s: NSApplication) -> Bool { true }
 
     @objc func exportPDF(_ sender: Any?) {
-        preview.exportPDF()
+        (NSApp.keyWindow?.contentView as? PreviewView)?.exportPDF()
     }
 
     @objc func openDocument(_ sender: Any?) {
@@ -173,9 +217,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                      UTType(filenameExtension: "markdown") ?? .plainText,
                                      .plainText]
         panel.allowsOtherFileTypes = true
+        panel.allowsMultipleSelection = true
         panel.begin { [weak self] response in
-            guard response == .OK, let url = panel.url else { return }
-            self?.preview.load(url)
+            guard response == .OK, let self else { return }
+            for url in panel.urls { self.open(url) }
         }
     }
 
@@ -193,6 +238,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let fileItem = NSMenuItem()
         let fileMenu = NSMenu(title: "File")
+        fileMenu.addItem(withTitle: "New Window", action: #selector(newWindow(_:)), keyEquivalent: "n")
         fileMenu.addItem(withTitle: "Open…", action: #selector(openDocument(_:)), keyEquivalent: "o")
         let recents = NSMenuItem(title: "Open Recent", action: nil, keyEquivalent: "")
         let recentsMenu = NSMenu(title: "Open Recent")
