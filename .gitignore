@@ -1,3 +1,6 @@
 # Build output
 Markdown.app/
 .DS_Store
+
+# Icon Composer exports (regenerate from Icon.icon)
+Icon Exports/
