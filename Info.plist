@@ -23,7 +23,9 @@
 	<key>CFBundleExecutable</key>
 	<string>Markdown</string>
 	<key>CFBundleIconFile</key>
-	<string>AppIcon</string>
+	<string>Icon</string>
+	<key>CFBundleIconName</key>
+	<string>Icon</string>
 	<key>CFBundleIdentifier</key>
 	<string>local.markdownpreview</string>
 	<key>CFBundleName</key>
